@@ -150,6 +150,8 @@ app.post('/api/auth/register', async (req, res) => {
     try {
         const { email, password, name, company, phone } = req.body;
         
+        console.log('Registration attempt for:', email);
+        
         // Check if user already exists
         const existingUser = await User.findOne({ email });
         if (existingUser) {
@@ -158,6 +160,7 @@ app.post('/api/auth/register', async (req, res) => {
         
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
+        console.log('Password hashed successfully');
         
         // Create user
         const user = new User({
@@ -169,26 +172,32 @@ app.post('/api/auth/register', async (req, res) => {
         });
         
         await user.save();
+        console.log('User saved to database:', email);
         
-        // Send welcome email
-        await transporter.sendMail({
-            from: process.env.SMTP_FROM,
-            to: email,
-            subject: 'Welcome to SAS-i Portal',
-            html: `
-                <h2>Welcome ${name}!</h2>
-                <p>Thank you for registering with SAS-i.</p>
-                <p>Your account has been created successfully. You can now log in to access your client portal.</p>
-                <p>We look forward to helping you with your aviation certification needs.</p>
-                <br>
-                <p>Best regards,<br>SAS-i Team</p>
-            `
-        });
+        // Send welcome email (catch errors so registration still succeeds)
+        try {
+            await transporter.sendMail({
+                from: process.env.SMTP_FROM,
+                to: email,
+                subject: 'Welcome to SAS-i Portal',
+                html: `
+                    <h2>Welcome ${name}!</h2>
+                    <p>Thank you for registering with SAS-i.</p>
+                    <p>Your account has been created successfully. You can now log in to access your client portal.</p>
+                    <p>We look forward to helping you with your aviation certification needs.</p>
+                    <br>
+                    <p>Best regards,<br>SAS-i Team</p>
+                `
+            });
+            console.log('Welcome email sent');
+        } catch (emailError) {
+            console.error('Email send failed (non-critical):', emailError.message);
+        }
         
         res.status(201).json({ message: 'User registered successfully' });
     } catch (error) {
         console.error('Registration error:', error);
-        res.status(500).json({ message: 'Server error during registration' });
+        res.status(500).json({ message: 'Server error during registration', error: error.message });
     }
 });
 
@@ -197,14 +206,21 @@ app.post('/api/auth/login', async (req, res) => {
     try {
         const { email, password } = req.body;
         
+        console.log('Login attempt for:', email);
+        
         // Find user
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ email: email.toLowerCase() });
         if (!user) {
+            console.log('User not found:', email);
             return res.status(401).json({ message: 'Invalid credentials' });
         }
         
+        console.log('User found, checking password...');
+        
         // Check password
         const isValidPassword = await bcrypt.compare(password, user.password);
+        console.log('Password valid:', isValidPassword);
+        
         if (!isValidPassword) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
@@ -215,6 +231,8 @@ app.post('/api/auth/login', async (req, res) => {
             process.env.JWT_SECRET,
             { expiresIn: '7d' }
         );
+        
+        console.log('Login successful for:', email);
         
         res.json({
             token,
@@ -227,7 +245,20 @@ app.post('/api/auth/login', async (req, res) => {
         });
     } catch (error) {
         console.error('Login error:', error);
-        res.status(500).json({ message: 'Server error during login' });
+        res.status(500).json({ message: 'Server error during login', error: error.message });
+    }
+});
+
+// Logout (NEW - FIXED!)
+app.post('/api/auth/logout', verifyToken, async (req, res) => {
+    try {
+        // Since we're using JWT, logout is handled client-side by removing the token
+        // This endpoint is mainly for logging purposes and future session management
+        console.log('User logged out:', req.userId);
+        res.json({ message: 'Logged out successfully' });
+    } catch (error) {
+        console.error('Logout error:', error);
+        res.status(500).json({ message: 'Error during logout' });
     }
 });
 
@@ -307,19 +338,23 @@ app.post('/api/projects', verifyToken, async (req, res) => {
         await project.save();
         
         // Send notification email
-        const user = await User.findById(req.userId);
-        await transporter.sendMail({
-            from: process.env.SMTP_FROM,
-            to: user.email,
-            subject: `New Project Created: ${projectId}`,
-            html: `
-                <h2>New Project Created</h2>
-                <p>Your project "${title}" has been created successfully.</p>
-                <p><strong>Project ID:</strong> ${projectId}</p>
-                <p><strong>Type:</strong> ${type}</p>
-                <p>You can track progress in your client portal.</p>
-            `
-        });
+        try {
+            const user = await User.findById(req.userId);
+            await transporter.sendMail({
+                from: process.env.SMTP_FROM,
+                to: user.email,
+                subject: `New Project Created: ${projectId}`,
+                html: `
+                    <h2>New Project Created</h2>
+                    <p>Your project "${title}" has been created successfully.</p>
+                    <p><strong>Project ID:</strong> ${projectId}</p>
+                    <p><strong>Type:</strong> ${type}</p>
+                    <p>You can track progress in your client portal.</p>
+                `
+            });
+        } catch (emailError) {
+            console.error('Email send failed (non-critical):', emailError.message);
+        }
         
         res.status(201).json(project);
     } catch (error) {
@@ -427,19 +462,23 @@ app.post('/api/messages', verifyToken, async (req, res) => {
         await message.save();
         
         // Send email notification to admin
-        await transporter.sendMail({
-            from: process.env.SMTP_FROM,
-            to: process.env.ADMIN_EMAIL,
-            subject: `New Message from ${user.name}: ${subject}`,
-            html: `
-                <h3>New message from client</h3>
-                <p><strong>From:</strong> ${user.name} (${user.email})</p>
-                <p><strong>Company:</strong> ${user.company}</p>
-                <p><strong>Subject:</strong> ${subject}</p>
-                <p><strong>Message:</strong></p>
-                <p>${body}</p>
-            `
-        });
+        try {
+            await transporter.sendMail({
+                from: process.env.SMTP_FROM,
+                to: process.env.ADMIN_EMAIL,
+                subject: `New Message from ${user.name}: ${subject}`,
+                html: `
+                    <h3>New message from client</h3>
+                    <p><strong>From:</strong> ${user.name} (${user.email})</p>
+                    <p><strong>Company:</strong> ${user.company}</p>
+                    <p><strong>Subject:</strong> ${subject}</p>
+                    <p><strong>Message:</strong></p>
+                    <p>${body}</p>
+                `
+            });
+        } catch (emailError) {
+            console.error('Email send failed (non-critical):', emailError.message);
+        }
         
         res.status(201).json(message);
     } catch (error) {
