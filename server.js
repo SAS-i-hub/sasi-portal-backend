@@ -35,6 +35,8 @@ const userSchema = new mongoose.Schema({
     phone: String,
     createdAt: { type: Date, default: Date.now },
     isActive: { type: Boolean, default: true }
+    isAdmin: { type: Boolean, default: false },
+    role: { type: String, enum: ['user', 'admin'], default: 'user' }
 });
 
 const User = mongoose.model('User', userSchema);
@@ -259,6 +261,57 @@ app.post('/api/auth/logout', verifyToken, async (req, res) => {
     } catch (error) {
         console.error('Logout error:', error);
         res.status(500).json({ message: 'Error during logout' });
+    }
+// Admin Login
+app.post('/api/auth/admin-login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        
+        console.log('Admin login attempt:', email);
+        
+        // Find user
+        const user = await User.findOne({ email: email.toLowerCase() });
+        if (!user) {
+            console.log('User not found:', email);
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
+        
+        // Check if user is admin
+        if (!user.isAdmin) {
+            console.log('Access denied - not admin:', email);
+            return res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+        }
+        
+        // Check password
+        const isValidPassword = await bcrypt.compare(password, user.password);
+        if (!isValidPassword) {
+            console.log('Invalid password for:', email);
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
+        
+        // Generate token
+        const token = jwt.sign(
+            { 
+                id: user._id, 
+                email: user.email,
+                isAdmin: true,
+                role: 'admin'
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '2h' }
+        );
+        
+        console.log('Admin login successful:', email);
+        
+        res.json({
+            token,
+            email: user.email,
+            name: user.name,
+            role: 'admin'
+        });
+    } catch (error) {
+        console.error('Admin login error:', error);
+        res.status(500).json({ message: 'Server error during login' });
     }
 });
 
