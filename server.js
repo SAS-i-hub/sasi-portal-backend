@@ -34,7 +34,7 @@ const userSchema = new mongoose.Schema({
     company: { type: String, required: true },
     phone: String,
     createdAt: { type: Date, default: Date.now },
-    isActive: { type: Boolean, default: true }
+    isActive: { type: Boolean, default: true },
     isAdmin: { type: Boolean, default: false },
     role: { type: String, enum: ['user', 'admin'], default: 'user' }
 });
@@ -262,6 +262,8 @@ app.post('/api/auth/logout', verifyToken, async (req, res) => {
         console.error('Logout error:', error);
         res.status(500).json({ message: 'Error during logout' });
     }
+});   
+
 // Admin Login
 app.post('/api/auth/admin-login', async (req, res) => {
     try {
