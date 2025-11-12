@@ -12,7 +12,17 @@ require('dotenv').config();
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: [
+        'https://www.sas-international.com',
+        'https://sas-international.com',
+        'https://portal.sas-international.com',
+        'https://www.portal.sas-international.com'
+    ],
+    credentials: true
+}));
+app.use(express.json());
+app.use(express.static('public'));
 app.use(express.json());
 app.use(express.static('public'));
 
